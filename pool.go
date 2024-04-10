@@ -66,7 +66,7 @@ func NewPool(opts ...Option) *Pool {
 }
 
 // Start start routine pool in background.
-// The initial number of workers is determined by the number of tasks in the channel.
+// The initial number of workers is determined by the number of tasks in the channel and maxWorkers.
 func (p *Pool) Start() {
 	p.start(min(len(p.taskChan), p.maxWorkers))
 }
