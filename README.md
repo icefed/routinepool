@@ -35,7 +35,7 @@ func main() {
 	var errCount int32
 	client := &http.Client{
 		Transport: &http.Transport{
-			MaxConnsPerHost: 12,
+			MaxConnsPerHost: 8,
 		},
 	}
 	costs := make([]time.Duration, 0)
