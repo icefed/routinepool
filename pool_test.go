@@ -17,18 +17,15 @@ func (c *Count) Do() {
 
 func TestPoolStopAndStart(t *testing.T) {
 	p := NewPool(0)
-	p.Start()
+	p.StartN(1)
 	c := &Count{}
-	for i := 0; i < 10; i++ {
-		p.AddTask(c.Do)
-	}
 	go func() {
-		for i := 0; i < 90; i++ {
+		for i := 0; i < 100; i++ {
 			p.AddTask(c.Do)
 		}
 	}()
 	p.Stop()
-	p.Start()
+	p.StartN(100)
 	p.Waite()
 	if c.Sum != 100 {
 		t.Error("not finished")
@@ -58,6 +55,8 @@ func (e *Err) Do() {
 func TestPoolPanic(t *testing.T) {
 	p := NewPool(10)
 	p.Start()
+	// nil task should be ignored
+	p.AddTask(nil)
 	c := &Count{}
 	for i := 0; i < 100; i++ {
 		p.AddTask(c.Do)
