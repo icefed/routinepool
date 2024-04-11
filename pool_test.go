@@ -17,7 +17,7 @@ func (c *Count) Do() {
 }
 
 func TestPoolStopAndStart(t *testing.T) {
-	p := NewPool()
+	p := New()
 	p.StartN(1)
 	// already started
 	p.Start()
@@ -36,7 +36,7 @@ func TestPoolStopAndStart(t *testing.T) {
 }
 
 func TestPoolWaite(t *testing.T) {
-	p := NewPool(WithMaxWorkers(10))
+	p := New(WithMaxWorkers(10))
 	p.Start()
 	c := &Count{}
 	for i := 0; i < 100; i++ {
@@ -53,7 +53,7 @@ func TestPoolWaite(t *testing.T) {
 }
 
 func TestPoolWaiteTimeout(t *testing.T) {
-	p := NewPool(WithMaxWorkers(10))
+	p := New(WithMaxWorkers(10))
 	// not started
 	p.WaitTimeout(time.Second * 3)
 
@@ -82,7 +82,7 @@ func (e *Err) Do() {
 }
 
 func TestPoolPanic(t *testing.T) {
-	p := NewPool(WithMaxWorkers(10))
+	p := New(WithMaxWorkers(10))
 	p.Start()
 	// nil task should be ignored
 	p.AddTask(nil)
@@ -100,7 +100,7 @@ func TestPoolPanic(t *testing.T) {
 }
 
 func TestPoolPanicAfterStop(t *testing.T) {
-	p := NewPool()
+	p := New()
 	p.StartN(2)
 	p.AddTask(func() {})
 	p.AddTask(func() {

@@ -47,8 +47,8 @@ const (
 	signalAddTask
 )
 
-// NewPool create a routine pool with options.
-func NewPool(opts ...Option) *Pool {
+// New create a routine pool with options.
+func New(opts ...Option) *Pool {
 	o := defaultOptions()
 	for _, option := range opts {
 		option.apply(o)
