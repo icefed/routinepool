@@ -29,7 +29,7 @@ import (
 )
 
 func main() {
-	p := routinepool.NewPool(routinepool.WithMaxWorkers(8))
+	p := routinepool.New(routinepool.WithMaxWorkers(8))
 	p.StartN(8)
 
 	var errCount int32
