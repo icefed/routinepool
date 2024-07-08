@@ -1,6 +1,7 @@
 # routine pool - Golang routine pool for multi asynchronous tasks.
 
-[![GoDoc](https://godoc.org/github.com/icefed/routinepool?status.svg)](https://pkg.go.dev/github.com/icefed/routinepool)
+[![GitHub Tag](https://img.shields.io/github/v/tag/icefed/routinepool)](https://github.com/icefed/routinepool/tags)
+[![Go Reference](https://pkg.go.dev/badge/github.com/icefed/routinepool.svg)](https://pkg.go.dev/github.com/icefed/routinepool)
 [![Go Report Card](https://goreportcard.com/badge/github.com/icefed/routinepool)](https://goreportcard.com/report/github.com/icefed/routinepool)
 ![Build Status](https://github.com/icefed/routinepool/actions/workflows/test.yml/badge.svg)
 [![Coverage](https://img.shields.io/codecov/c/github/icefed/routinepool)](https://codecov.io/gh/icefed/routinepool)
