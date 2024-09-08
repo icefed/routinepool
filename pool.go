@@ -162,24 +162,40 @@ func (p *Pool) startWorkerRoutine() {
 		}()
 
 		idleTimeout := p.idleTimeout
+		idleTimer := time.NewTimer(idleTimeout)
 		atomic.AddInt64(&p.idleWorkers, 1)
 
 		for {
+			resetTimer(idleTimer, idleTimeout)
+
 			select {
 			case timeout, ok := <-w.wait:
 				if !ok {
 					return
 				}
 				idleTimeout = timeout
+				resetTimer(idleTimer, idleTimeout)
 			case task := <-p.taskChan:
 				atomic.AddInt64(&p.idleWorkers, -1)
 				task()
 				atomic.AddInt64(&p.idleWorkers, 1)
-			case <-time.After(idleTimeout):
+			case <-idleTimer.C:
 				return
 			}
 		}
 	}()
+}
+
+// resetTimer stops, drains and resets the timer.
+// there is a Timer.Reset issue: https://github.com/golang/go/issues/11513
+func resetTimer(t *time.Timer, d time.Duration) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+	t.Reset(d)
 }
 
 // AddTask add a task to Pool, the worker routine will execute the task.
