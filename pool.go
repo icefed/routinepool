@@ -11,38 +11,28 @@ type Pool struct {
 	mu sync.Mutex
 	wg sync.WaitGroup
 
-	maxWorkers     int               // max worker routine numbers
-	runningWorkers map[int64]*worker // in running worker routines
-	idleWorkers    int64             // idle worker routine numbers
-	idleTimeout    time.Duration
-	workerSeq      int64
+	maxWorkers     int   // max worker routine numbers
+	runningWorkers int64 // in running worker numbers
+	idleWorkers    int64 // idle worker routine numbers
+	taskProcessed  int64
 	started        bool
 
-	controlChan chan signal
-	taskChan    chan TaskFunc
-}
-
-type worker struct {
-	id   int64
-	wait chan time.Duration
+	workerStopChan chan struct{}
+	controlChan    chan signal
+	taskChan       chan TaskFunc
 }
 
 // TaskFunc defines a task function
 type TaskFunc func()
 
-type signal struct {
-	signal int
-	// signal from worker's id
-	workerId int64
-	// call Wait() with worker idle timeout, send to workers
-	idleTimeout time.Duration
-}
+// worker idle timeout to exit
+const WorkerIdleTimeoutToExit = time.Second
 
 // signal type
+type signal int
+
 const (
-	signalWorkerRoutineExit = iota
-	signalWorkerRoutinePanic
-	signalWaiteWorkers
+	signalWorkerRoutinePanic signal = iota
 	signalStopWorkers
 	signalAddTask
 )
@@ -54,12 +44,9 @@ func New(opts ...Option) *Pool {
 		option.apply(o)
 	}
 	pool := &Pool{
-		maxWorkers:     o.maxWorkers,
-		runningWorkers: make(map[int64]*worker),
-		idleTimeout:    o.idleTimeout,
-		workerSeq:      100,
-		controlChan:    make(chan signal, 8),
-		taskChan:       make(chan TaskFunc, o.maxTaskSize),
+		maxWorkers:  o.maxWorkers,
+		controlChan: make(chan signal, 8),
+		taskChan:    make(chan TaskFunc, o.maxTaskSize),
 	}
 
 	return pool
@@ -88,6 +75,7 @@ func (p *Pool) start(workerNum int) {
 		return
 	}
 
+	p.workerStopChan = make(chan struct{})
 	for i := 0; i < workerNum; i++ {
 		p.startWorkerRoutine()
 	}
@@ -104,37 +92,24 @@ func (p *Pool) startControllerRoutine() {
 		p.started = false
 	}()
 
-	waite := false
 	stop := false
 
 	for {
-		if (stop || waite) && len(p.runningWorkers) == 0 {
+		if stop && atomic.LoadInt64(&p.runningWorkers) == 0 {
 			return
 		}
 
 		s := <-p.controlChan
-		switch s.signal {
+		switch s {
 		case signalWorkerRoutinePanic:
-			delete(p.runningWorkers, s.workerId)
 			if !stop {
 				p.startWorkerRoutine()
 			}
-		case signalWorkerRoutineExit:
-			delete(p.runningWorkers, s.workerId)
-		case signalWaiteWorkers:
-			waite = true
-			if s.idleTimeout > 0 {
-				for _, w := range p.runningWorkers {
-					w.wait <- s.idleTimeout
-				}
-			}
 		case signalStopWorkers:
 			stop = true
-			for _, w := range p.runningWorkers {
-				close(w.wait)
-			}
+			close(p.workerStopChan)
 		case signalAddTask:
-			if !stop && atomic.LoadInt64(&p.idleWorkers) == 0 && len(p.runningWorkers) < p.maxWorkers {
+			if !stop && atomic.LoadInt64(&p.idleWorkers) == 0 && atomic.LoadInt64(&p.runningWorkers) < int64(p.maxWorkers) {
 				p.startWorkerRoutine()
 			}
 		}
@@ -143,41 +118,32 @@ func (p *Pool) startControllerRoutine() {
 
 // start worker routine
 func (p *Pool) startWorkerRoutine() {
-	p.workerSeq++
-	w := &worker{
-		id:   p.workerSeq,
-		wait: make(chan time.Duration, 1),
-	}
-	p.runningWorkers[p.workerSeq] = w
+	atomic.AddInt64(&p.runningWorkers, 1)
 
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
 		defer func() {
+			atomic.AddInt64(&p.runningWorkers, -1)
+
 			if r := recover(); r != nil {
-				p.controlChan <- signal{signal: signalWorkerRoutinePanic, workerId: w.id}
-				return
+				p.controlChan <- signalWorkerRoutinePanic
 			}
-			p.controlChan <- signal{signal: signalWorkerRoutineExit, workerId: w.id}
 		}()
 
-		idleTimeout := p.idleTimeout
-		idleTimer := time.NewTimer(idleTimeout)
+		idleTimer := time.NewTimer(WorkerIdleTimeoutToExit)
 		atomic.AddInt64(&p.idleWorkers, 1)
 
 		for {
-			resetTimer(idleTimer, idleTimeout)
+			resetTimer(idleTimer, WorkerIdleTimeoutToExit)
 
 			select {
-			case timeout, ok := <-w.wait:
-				if !ok {
-					return
-				}
-				idleTimeout = timeout
-				resetTimer(idleTimer, idleTimeout)
+			case <-p.workerStopChan:
+				return
 			case task := <-p.taskChan:
 				atomic.AddInt64(&p.idleWorkers, -1)
 				task()
+				atomic.AddInt64(&p.taskProcessed, 1)
 				atomic.AddInt64(&p.idleWorkers, 1)
 			case <-idleTimer.C:
 				return
@@ -204,7 +170,7 @@ func (p *Pool) AddTask(task TaskFunc) {
 	if task == nil {
 		return
 	}
-	p.controlChan <- signal{signal: signalAddTask}
+	p.controlChan <- signalAddTask
 	p.taskChan <- task
 }
 
@@ -218,12 +184,13 @@ func (p *Pool) Stop() {
 	}
 
 	// send stop all routines signal to control routine
-	p.controlChan <- signal{signal: signalStopWorkers}
+	p.controlChan <- signalStopWorkers
 	// waite
 	p.wg.Wait()
 }
 
-// Wait blocking, waiting all tasks be executed and no tasks to execute in idle timeout(default 1s), then stop the pool,
+// Wait for blocking, and wait for all tasks to be executed and no tasks to be
+// executed, then stop the pool.
 // if taskChan never empty, it wouldn't return.
 func (p *Pool) Wait() {
 	p.mu.Lock()
@@ -233,15 +200,18 @@ func (p *Pool) Wait() {
 		return
 	}
 
-	// send waiting all routines done signal to control routine
-	p.controlChan <- signal{signal: signalWaiteWorkers}
-	// waite
-	p.wg.Wait()
+	for {
+		// waiting for all tasks be executed and no running workers
+		if len(p.taskChan) == 0 && atomic.LoadInt64(&p.runningWorkers) == 0 {
+			return
+		}
+		time.Sleep(time.Millisecond * 100)
+	}
 }
 
-// WaitTimeout waiting with worker idle timeout, then stop the pool.
+// WaitIdleTimeout waiting with idle timeout, then stop the pool.
 // if taskChan never empty, it wouldn't return.
-func (p *Pool) WaitTimeout(idleTimeout time.Duration) {
+func (p *Pool) WaitIdleTimeout(idleTimeout time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -249,8 +219,19 @@ func (p *Pool) WaitTimeout(idleTimeout time.Duration) {
 		return
 	}
 
-	// send waiting signal and idle timeout to control routine
-	p.controlChan <- signal{signal: signalWaiteWorkers, idleTimeout: idleTimeout}
-	// waite
-	p.wg.Wait()
+	allIdle := false
+	for {
+		// waiting for all tasks be executed and no running workers
+		if len(p.taskChan) == 0 && atomic.LoadInt64(&p.runningWorkers) == 0 {
+			if allIdle {
+				return
+			}
+			allIdle = true
+			time.Sleep(idleTimeout)
+			continue
+		} else {
+			allIdle = false
+		}
+		time.Sleep(time.Millisecond * 100)
+	}
 }

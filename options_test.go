@@ -3,7 +3,6 @@ package routinepool
 import (
 	"runtime"
 	"testing"
-	"time"
 )
 
 func TestOptions(t *testing.T) {
@@ -15,15 +14,6 @@ func TestOptions(t *testing.T) {
 	WithMaxWorkers(0).apply(o)
 	if o.maxWorkers != runtime.NumCPU() {
 		t.Errorf("WithMaxWorkers want %d, got %d", runtime.NumCPU(), o.maxWorkers)
-	}
-
-	WithIdleTimeout(time.Second * 2).apply(o)
-	if o.idleTimeout != time.Second*2 {
-		t.Errorf("WithIdleTimeout want %d, got %d", time.Second*2, o.idleTimeout)
-	}
-	WithIdleTimeout(time.Millisecond * 100).apply(o)
-	if o.idleTimeout != time.Second {
-		t.Errorf("WithIdleTimeout want %d, got %d", time.Second, o.idleTimeout)
 	}
 
 	WithMaxTaskSize(10).apply(o)

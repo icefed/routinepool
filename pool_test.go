@@ -52,10 +52,10 @@ func TestPoolWaite(t *testing.T) {
 	p.Wait()
 }
 
-func TestPoolWaiteTimeout(t *testing.T) {
+func TestPoolWaiteIdleTime(t *testing.T) {
 	p := New(WithMaxWorkers(10))
 	// not started
-	p.WaitTimeout(time.Second * 3)
+	p.WaitIdleTimeout(time.Second * 3)
 
 	p.Start()
 	c := &Count{sleep: time.Millisecond * 100}
@@ -64,7 +64,7 @@ func TestPoolWaiteTimeout(t *testing.T) {
 	}
 
 	now := time.Now()
-	p.WaitTimeout(time.Second * 3)
+	p.WaitIdleTimeout(time.Second * 3)
 	if c.Sum != 100 {
 		t.Error("not finished, want 100, got", c.Sum)
 	}
@@ -74,8 +74,7 @@ func TestPoolWaiteTimeout(t *testing.T) {
 	}
 }
 
-type Err struct {
-}
+type Err struct{}
 
 func (e *Err) Do() {
 	panic("")
