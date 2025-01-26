@@ -95,22 +95,24 @@ func (p *Pool) startControllerRoutine() {
 	stop := false
 
 	for {
-		if stop && atomic.LoadInt64(&p.runningWorkers) == 0 {
-			return
-		}
-
-		s := <-p.controlChan
-		switch s {
-		case signalWorkerRoutinePanic:
-			if !stop {
-				p.startWorkerRoutine()
+		select {
+		case s := <-p.controlChan:
+			switch s {
+			case signalWorkerRoutinePanic:
+				if !stop {
+					p.startWorkerRoutine()
+				}
+			case signalStopWorkers:
+				stop = true
+				close(p.workerStopChan)
+			case signalAddTask:
+				if !stop && atomic.LoadInt64(&p.idleWorkers) == 0 && atomic.LoadInt64(&p.runningWorkers) < int64(p.maxWorkers) {
+					p.startWorkerRoutine()
+				}
 			}
-		case signalStopWorkers:
-			stop = true
-			close(p.workerStopChan)
-		case signalAddTask:
-			if !stop && atomic.LoadInt64(&p.idleWorkers) == 0 && atomic.LoadInt64(&p.runningWorkers) < int64(p.maxWorkers) {
-				p.startWorkerRoutine()
+		default:
+			if stop && atomic.LoadInt64(&p.runningWorkers) == 0 {
+				return
 			}
 		}
 	}
@@ -124,11 +126,12 @@ func (p *Pool) startWorkerRoutine() {
 	go func() {
 		defer p.wg.Done()
 		defer func() {
-			atomic.AddInt64(&p.runningWorkers, -1)
-
 			if r := recover(); r != nil {
 				p.controlChan <- signalWorkerRoutinePanic
+			} else {
+				atomic.AddInt64(&p.idleWorkers, -1)
 			}
+			atomic.AddInt64(&p.runningWorkers, -1)
 		}()
 
 		idleTimer := time.NewTimer(WorkerIdleTimeoutToExit)
